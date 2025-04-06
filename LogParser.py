@@ -17,6 +17,28 @@ def parse_log_file(log_path, output_path):
     }
     known_enemy_locations = set(enemy_location_map.values())
 
+    # Function to handle final jokers for client sent and got messages
+    def handle_final_jokers(line, lines_out, sender):
+        # Client sent format: "action:receiveEndGameJokers,keys:j_mp_conjoined_joker;j_mp_conjoined_joker;j_card_sharp;j_bloodstone;"
+        # Client got format: "keys: j_mp_hanging_chad;j_photograph;j_mp_hanging_chad;j_bloodstone;"
+        if "Client sent message" in line:
+            match = re.search(r"keys:([a-zA-Z0-9_;]+)", line)
+        elif "Client got" in line:
+            match = re.search(r"keys: ([a-zA-Z0-9_;]+)", line)
+        else:
+            return
+
+        if match:
+            jokers = match.group(1).split(';')
+            # Count joker occurrences
+            joker_counts = {}
+            for joker in jokers:
+                clean_joker = re.sub(r"^(j_mp_|j_)", "", joker).replace("_", " ").title()
+                joker_counts[clean_joker] = joker_counts.get(clean_joker, 0) + 1
+            # Format output to show count
+            final_jokers = [f"{joker} x{count}" if count > 1 else joker for joker, count in joker_counts.items()]
+            lines_out.append(f"Final {sender} Jokers: {', '.join(final_jokers)}")
+
     with open(log_path, 'r', encoding='utf-8') as f:
         for line in f:
             if "enemyInfo" in line:
@@ -72,36 +94,57 @@ def parse_log_file(log_path, output_path):
                 continue
 
             # Only process these if it's a received line
-            if "Client got" not in line:
+            if "Client got" not in line and "Client sent" not in line:
                 continue
 
-            if "soldJoker" in line:
-                lines_out.append("Sold Joker")
-            elif "loc_shop" in line:
-                lines_out.append("Shop")
-            elif "loc_selecting" in line:
-                continue  # Ignore this
-            elif "spentLastShop" in line:
-                amount_match = re.search(r"amount: (\d+)", line)
-                if amount_match:
-                    lines_out.append(f"Spent ${amount_match.group(1)}")
-            elif "endPvP" in line:
-                lines_out.append("Enemy Lost PvP" if "lost:false" in line else "Enemy Won PvP")
-            elif "enemyLocation" in line:
-                loc_match = re.search(r"loc_playing-([a-zA-Z0-9_]+)", line)
-                if loc_match:
-                    loc_code = loc_match.group(1)
-                    if loc_code in enemy_location_map:
-                        readable = enemy_location_map[loc_code]
-                    else:
-                        if loc_code.startswith("bl_"):
-                            readable = loc_code[3:].replace("_", " ").title()
+            if "Client got" in line:
+                if "soldJoker" in line:
+                    lines_out.append("Sold Joker")
+                elif "loc_shop" in line:
+                    lines_out.append("Shop")
+                elif "loc_selecting" in line:
+                    continue  # Ignore this
+                elif "spentLastShop" in line:
+                    amount_match = re.search(r"amount: (\d+)", line)
+                    if amount_match:
+                        lines_out.append(f"Spent ${amount_match.group(1)}")
+                elif "endPvP" in line:
+                    lines_out.append("Enemy Lost PvP" if "lost:false" in line else "Enemy Won PvP")
+                elif "enemyLocation" in line:
+                    loc_match = re.search(r"loc_playing-([a-zA-Z0-9_]+)", line)
+                    if loc_match:
+                        loc_code = loc_match.group(1)
+                        if loc_code in enemy_location_map:
+                            readable = enemy_location_map[loc_code]
                         else:
-                            readable = loc_code.replace("_", " ").title()
-                        if readable not in known_enemy_locations:
-                            known_enemy_locations.add(readable)
-                    lines_out.append(readable)
+                            if loc_code.startswith("bl_"):
+                                readable = loc_code[3:].replace("_", " ").title()
+                            else:
+                                readable = loc_code.replace("_", " ").title()
+                            if readable not in known_enemy_locations:
+                                known_enemy_locations.add(readable)
+                        lines_out.append(readable)
 
+                # Handle the "Client got" final jokers messages
+                if "Client got message" in line and "receiveEndGameJokers" in line:
+                    handle_final_jokers(line, lines_out, "Received")
+
+                # Handle the "Client got magnet" usage
+                if "magnet" in line:
+                    lines_out.append("Used Magnet")
+
+            # Handle the "Client sent" final jokers messages
+            if "Client sent message" in line:
+                if "receiveEndGameJokers" in line:
+                    handle_final_jokers(line, lines_out, "Sent")
+
+                # Handle the magnetResponse for jokers
+                if "magnetResponse" in line:
+                    match = re.search(r"key: ?([a-zA-Z0-9_]+)", line)
+                    if match:
+                        joker_raw = match.group(1)
+                        clean_joker = re.sub(r"^(j_mp_|j_)", "", joker_raw).replace("_", " ").title()
+                        lines_out.append(f"Magnet Got {clean_joker}")
     with open(output_path, 'w', encoding='utf-8') as f:
         f.write("\n".join(lines_out))
 
