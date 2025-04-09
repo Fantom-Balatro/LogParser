@@ -87,6 +87,27 @@ def parse_log_file(log_path, output_path):
                     pretty = clean.replace("_", " ").title()
                     lines_out.append(f"Used {pretty}")
 
+            elif "setlocation" in line_lower:
+                loc_match = re.search(r"location:([a-zA-Z0-9_-]+)", line)
+                if loc_match:
+                    loc_code = loc_match.group(1)
+                    if loc_code == "loc_selecting":
+                        continue  # Ignore
+                    elif loc_code == "loc_shop":
+                        lines_out.append("Shop")
+                    elif loc_code.startswith("loc_playing-"):
+                        subcode = loc_code[len("loc_playing-"):]
+                        if subcode.startswith("bl_"):
+                            blind_name = subcode[3:].replace("_", " ").title()
+                            lines_out.append(blind_name + " Blind")
+                        else:
+                            readable = subcode.replace("_", " ").title()
+                            lines_out.append("Playing " + readable)
+                    else:
+                        readable = loc_code.replace("_", " ").title()
+                        lines_out.append(readable)
+
+
             elif "playhand" in line_lower:
                     continue  # Ignore this
 
